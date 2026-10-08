@@ -460,12 +460,14 @@ pub(crate) fn overlay(ctx: &egui::Context, view: &mut DocView, info: &DocInfo) -
             // The box follows the text as you type: as wide as the longest drafted line needs
             // (up to what the rewrite allows), so new content grows the box instead of wrapping
             // inside the old one.
-            let mut width = ed.rect.width().max(120.0);
+            // Keep the text editor anchored to the PDF block, including short text runs.
+            // A 120px minimum made small blocks jump wider and reflow as soon as they were clicked.
+            let mut width = ed.rect.width().max(1.0);
             if ed.max_width > width {
                 let needed = ui.fonts_mut(|f| {
                     ed.text.lines().map(|l| f.layout_no_wrap(l.to_owned(), font.clone(), text_color).size().x).fold(0.0_f32, f32::max)
                 }) + 8.0;
-                width = width.max(needed).min(ed.max_width);
+                width = width.max(needed).min(ed.max_width.max(width));
             }
             egui::Frame::NONE.fill(Color32::WHITE).stroke(Stroke::new(1.5, ACCENT)).inner_margin(egui::Margin::symmetric(2, 0)).show(ui, |ui| {
                 let rows = ed.text.lines().count().max(1);
