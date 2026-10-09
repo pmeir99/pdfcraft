@@ -35,6 +35,7 @@ fn harness(options: &'static [(&'static str, &'static str)]) -> Harness<'static,
 fn harness_stepping(step_dt: f32, options: &'static [(&'static str, &'static str)]) -> Harness<'static, PdfCraftApp> {
     let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).with_step_dt(step_dt).build_eframe(move |_cc| {
         let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
         app.open_bytes("pages.pdf", None, PAGES.to_vec()).expect("opens");
         app.set_option("left", "closed").unwrap();
         app.set_option("panel", "none").unwrap();
@@ -63,6 +64,7 @@ trailer << /Root 1 0 R >>
 fn mixed_harness(options: &'static [(&'static str, &'static str)]) -> Harness<'static, PdfCraftApp> {
     let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(move |_cc| {
         let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
         app.open_bytes("mixed.pdf", None, MIXED.to_vec()).expect("opens");
         app.set_option("left", "closed").unwrap();
         app.set_option("panel", "none").unwrap();
@@ -230,6 +232,7 @@ fn layout_option_rejects_typos() {
 #[test]
 fn view_options_without_a_document() {
     let mut app = PdfCraftApp::new();
+    app.set_option("language", "en").unwrap();
     assert!(app.set_option("default-layout", "single").is_ok(), "the default needs no document");
     assert_eq!(app.view_defaults.layout, pdfcraft_ui_egui::canvas::PageLayout::Single);
     assert!(app.set_option("cover", "on").is_err(), "cover needs an open document");
@@ -251,6 +254,7 @@ fn default_page_display_is_used_for_new_documents() {
     // Persisted preferences survive a restart.
     let saved = h.state().persist();
     let mut fresh = PdfCraftApp::new();
+    fresh.set_option("language", "en").unwrap();
     fresh.restore(&saved);
     assert_eq!(fresh.view_defaults.layout, PageLayout::Single);
     // Garbage keeps the previous default; casing is forgiven; legacy files lack the key.
@@ -259,6 +263,7 @@ fn default_page_display_is_used_for_new_documents() {
     fresh.restore(r#"{"default_layout":"TWO-UP"}"#);
     assert_eq!(fresh.view_defaults.layout, PageLayout::TwoUp);
     let mut legacy = PdfCraftApp::new();
+    legacy.set_option("language", "en").unwrap();
     legacy.restore("{}");
     assert_eq!(legacy.view_defaults.layout, PageLayout::Continuous);
 }
@@ -287,6 +292,7 @@ fn default_zoom_is_used_for_new_documents() {
     // Saved settings keep it, and garbage leaves it alone.
     let saved = h.state().persist();
     let mut fresh = PdfCraftApp::new();
+    fresh.set_option("language", "en").unwrap();
     fresh.restore(&saved);
     fresh.restore(r#"{"default_zoom":"bogus"}"#);
     fresh.open_bytes("again.pdf", None, PAGES.to_vec()).expect("opens");
@@ -463,6 +469,7 @@ trailer << /Root 1 0 R >>
 fn form_harness() -> Harness<'static, PdfCraftApp> {
     let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(|_cc| {
         let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
         app.open_bytes("form.pdf", None, FORM.to_vec()).expect("opens");
         app.set_option("left", "closed").unwrap();
         app
@@ -511,6 +518,75 @@ fn highlight_fields_tints_the_field_area() {
     h.get_by_label("Hide field highlights");
     let after = pixel(&mut h);
     assert_ne!(before, after, "the field area is tinted when highlighting is on");
+}
+
+/// A required radio group (`/Ff` 32768 radio + 2 required) with two 40 pt round buttons.
+const RADIOS: &[u8] = b"%PDF-1.7
+1 0 obj << /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R] >> >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 300 400] >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R /Annots [5 0 R 6 0 R] >> endobj
+4 0 obj << /FT /Btn /Ff 32770 /T (choice) /V /Off /Kids [5 0 R 6 0 R] >> endobj
+5 0 obj << /Type /Annot /Subtype /Widget /Parent 4 0 R /Rect [50 300 90 340] /AS /Off /P 3 0 R >> endobj
+6 0 obj << /Type /Annot /Subtype /Widget /Parent 4 0 R /Rect [150 300 190 340] /AS /Off /P 3 0 R >> endobj
+trailer << /Root 1 0 R >>
+%%EOF";
+
+/// #260 (page 8): with fields highlighted, a required radio button gets a round red border, as
+/// Acrobat draws it, not a square one around its corners.
+#[test]
+fn required_radio_buttons_get_a_round_red_border() {
+    let _gpu = gpu();
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(|_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("radios.pdf", None, RADIOS.to_vec()).expect("opens");
+        app.set_option("left", "closed").unwrap();
+        app.set_option("panel", "none").unwrap();
+        app.set_option("fields", "on").unwrap();
+        app
+    });
+    for _ in 0..100 {
+        h.run_steps(2);
+        if !h.state().render_pending() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let r = rect(&h, 0).expect("page 1");
+    let ppp = h.ctx.pixels_per_point();
+    let img = h.render().expect("renders");
+    // The first button spans x 50..90, y 300..340 on the 300×400 pt page (y up).
+    let at = |x: f32, y: f32| {
+        let p = egui::pos2(r.min.x + r.width() * (x / 300.0), r.min.y + r.height() * (1.0 - y / 400.0));
+        *img.get_pixel((p.x * ppp) as u32, (p.y * ppp) as u32)
+    };
+    let red = |p: image::Rgba<u8>| p[0] > 180 && p[1] < 100 && p[2] < 100;
+    // Fit width puts about 4 px in a point: 0.2 to 0.3 pt from an edge is inside a 2 px border.
+    assert!(red(at(50.2, 320.0)), "the left of the circle is red: {:?}", at(50.2, 320.0));
+    assert!(!red(at(50.3, 339.7)), "the widget's corner, outside the circle, is not: {:?}", at(50.3, 339.7));
+}
+
+/// Acrobat's Highlight existing fields is a preference, not a per-document choice: turned on
+/// once, the next document (and the next session) opens with fields highlighted.
+#[test]
+fn field_highlighting_is_remembered() {
+    use egui_kittest::kittest::Queryable;
+    let mut h = form_harness();
+    h.state_mut().set_option("panel", "none").unwrap();
+    h.run_steps(4);
+    assert!(!h.state().views[0].highlight_fields, "off by default");
+    h.get_by_label("Highlight fields").click();
+    h.run_steps(4);
+    assert!(h.state().views[0].highlight_fields);
+    h.state_mut().open_bytes("radios.pdf", None, RADIOS.to_vec()).expect("opens");
+    h.run_steps(4);
+    assert!(h.state().views[1].highlight_fields, "the next document opens highlighted");
+    let saved = h.state().persist();
+    let mut next = PdfCraftApp::new();
+    next.set_option("language", "en").unwrap();
+    next.restore(&saved);
+    next.open_bytes("form.pdf", None, FORM.to_vec()).expect("opens");
+    assert!(next.views[0].highlight_fields, "and so does the next session");
 }
 
 #[test]
@@ -566,4 +642,80 @@ fn required_fields_get_a_red_border_when_highlighting() {
     let img = h.render().expect("renders");
     let px = *img.get_pixel((at.x * ppp) as u32, (at.y * ppp) as u32);
     assert!(px[0] > 180 && px[1] < 100 && px[2] < 100, "a red border: {px:?}");
+}
+
+/// The page raster is shown texel for texel. At a zoom whose device scale isn't on the old 1/64
+/// grid (87 % at 1 px per point: 1.16, rendered at 1.15625) the page was rendered at the
+/// quantized scale and stretched onto a rectangle that didn't start on a whole pixel, so every
+/// line and glyph was resampled and looked soft (#260, page 9).
+#[test]
+fn page_raster_maps_one_to_one_onto_screen_pixels() {
+    let _gpu = gpu();
+    // Fine vertical and horizontal lines (0.5 pt every 1.7 pt) fill most of a 300×400 pt page.
+    let mut content = String::from("0 g\n");
+    for i in 0..140 {
+        let v = 30.0 + 1.7 * i as f32;
+        content.push_str(&format!("{v} 40 0.5 320 re 30 {v} 240 0.5 re\n"));
+    }
+    content.push_str("f\n");
+    let pdf = format!(
+        "%PDF-1.7
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 300 400] /Contents 4 0 R >> endobj
+4 0 obj << /Length {} >> stream
+{content}
+endstream endobj
+trailer << /Root 1 0 R >>
+%%EOF",
+        content.len()
+    )
+    .into_bytes();
+    for ppp in [1.0, 2.0] {
+        let bytes = pdf.clone();
+        let mut h = Harness::builder().with_size(egui::vec2(1000.0, 800.0)).with_pixels_per_point(ppp).build_eframe(move |_cc| {
+            let mut app = PdfCraftApp::new();
+            app.set_option("language", "en").unwrap();
+            app.open_bytes("lines.pdf", None, bytes.clone()).expect("opens");
+            app.set_option("left", "closed").unwrap();
+            app.set_option("panel", "none").unwrap();
+            app.set_option("zoom", "87").unwrap();
+            app
+        });
+        let (mean, worst) = compare_page_with_raster(&mut h, &pdf, 0.87);
+        assert!(mean < 1.0 && worst < 16, "{ppp} px/pt: the page on screen differs from its raster: mean {mean:.2}, max {worst}");
+    }
+}
+
+/// Mean and largest difference between page 1 on screen and the page rendered directly at the
+/// view's exact device scale, over the lined area of `page_raster_maps_one_to_one_onto_screen_pixels`.
+fn compare_page_with_raster(h: &mut Harness<'static, PdfCraftApp>, pdf: &[u8], zoom: f32) -> (f64, u8) {
+    for _ in 0..100 {
+        h.run_steps(2);
+        if !h.state().render_pending() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let ppp = h.ctx.pixels_per_point();
+    let r = rect(h, 0).expect("page 1");
+    let img = h.render().expect("renders");
+    let scale = zoom * 96.0 / 72.0 * ppp;
+    let mut renderer = pdfcraft_render::PageRenderer::new(std::sync::Arc::new(pdf.to_vec()), pdfcraft_render::RenderConfig::default());
+    let page = renderer.render(pdfcraft_render::RenderRequest { page: 0, kind: pdfcraft_render::RequestKind::Pixels, tile: None, scale, tag: 0 });
+    assert!(page.error.is_none(), "{:?}", page.error);
+    // Compare the lined area (page x 40..270 pt, y 60..330 pt from the top), screen against raster.
+    let (ox, oy) = ((r.min.x * ppp).round() as i64, (r.min.y * ppp).round() as i64);
+    let (mut sum, mut worst, mut n) = (0u64, 0u8, 0u64);
+    for py in (60.0 * scale) as u32..(330.0 * scale) as u32 {
+        for px in (40.0 * scale) as u32..(270.0 * scale) as u32 {
+            let want = page.rgba[((py * page.width + px) * 4) as usize];
+            let got = img.get_pixel((ox + px as i64) as u32, (oy + py as i64) as u32)[0];
+            let d = want.abs_diff(got);
+            sum += u64::from(d);
+            worst = worst.max(d);
+            n += 1;
+        }
+    }
+    (sum as f64 / n as f64, worst)
 }

@@ -45,6 +45,7 @@ fn harness(docs: &[usize]) -> Harness<'static, PdfCraftApp> {
     let docs = docs.to_vec();
     let mut h = Harness::builder().with_size(egui::vec2(1200.0, 800.0)).build_eframe(move |_cc| {
         let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
         for (i, n) in docs.iter().enumerate() {
             app.open_bytes(&format!("doc{i}.pdf"), None, fixture(*n)).unwrap();
         }
@@ -408,4 +409,18 @@ fn replace_pages_applies_only_to_the_document_its_dialog_was_opened_on() {
             assert!(dirty(h.state(), 0) && !dirty(h.state(), 1), "the first document's page is replaced");
         }
     }
+}
+
+/// A file that fails to arrive asynchronously (the browser's `?file=` URL answering HTTP 404) is
+/// reported in the app on the next frame, not only in the console (#173).
+#[test]
+fn a_failed_startup_url_is_reported_in_the_app() {
+    let mut h = harness(&[]);
+    let failed = h.state().failed_inbox.clone();
+    failed.lock().unwrap().push(("missing.pdf".into(), "HTTP 404".into()));
+    h.run_steps(2);
+    let toast = h.state().toast.as_ref().map(|(m, _)| m.clone()).unwrap_or_default();
+    assert!(toast.contains("missing.pdf") && toast.contains("HTTP 404"), "{toast:?}");
+    assert!(h.state().views.is_empty(), "no document was opened");
+    assert!(failed.lock().unwrap().is_empty(), "each failure is reported once");
 }

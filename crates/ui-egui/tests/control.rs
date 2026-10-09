@@ -43,6 +43,7 @@ fn harness_pages(pages: usize) -> (Harness<'static, PdfCraftApp>, ControlClient)
     let s = slot.clone();
     let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(move |cc| {
         let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
         *s.lock().unwrap() = Some(app.attach_control(&cc.egui_ctx));
         app.open_bytes("doc.pdf", None, fixture(pages)).unwrap();
         app
@@ -66,6 +67,35 @@ fn call(h: &mut Harness<'static, PdfCraftApp>, c: &ControlClient, method: &str, 
 
 fn ok(h: &mut Harness<'static, PdfCraftApp>, c: &ControlClient, method: &str, params: Value) -> Value {
     call(h, c, method, params).unwrap_or_else(|e| panic!("{method}: {e}"))
+}
+
+#[test]
+fn bookmark_titles_can_be_searched_over_control() {
+    let (mut h, c) = harness();
+    for (index, title, page) in [(0, "Background", 0), (1, "Target chapter", 3)] {
+        h.state_mut().apply_edit(pdfcraft_engine::Edit::AddBookmark { parent: vec![], index, title: title.into(), page });
+    }
+    ok(&mut h, &c, "ui.set", json!({ "key": "panel", "value": "bookmarks" }));
+    h.run_steps(3);
+    let widgets = ok(&mut h, &c, "ui.inspect", json!({ "query": "Search", "role": "TextInput" }));
+    let rect = &widgets["widgets"][0]["rect"];
+    let x = (rect[0].as_f64().unwrap() + rect[2].as_f64().unwrap()) / 2.0;
+    let y = (rect[1].as_f64().unwrap() + rect[3].as_f64().unwrap()) / 2.0;
+    ok(&mut h, &c, "ui.click", json!({ "x": x, "y": y }));
+    ok(&mut h, &c, "ui.type", json!({ "text": "target" }));
+    h.get_by_label("Target chapter");
+    assert!(h.query_by_label("Background").is_none());
+    ok(&mut h, &c, "ui.click", json!({ "label": "Target chapter" }));
+    assert_eq!(h.state().views[0].current, 3);
+    if let Ok(dir) = std::env::var("PDFCRAFT_BOOKMARK_SHOTS") {
+        h.render().unwrap().save(format!("{dir}/control-filtered-bookmarks.png")).unwrap();
+    }
+    ok(&mut h, &c, "ui.click", json!({ "label": "Clear" }));
+    h.get_by_label("Background");
+    h.get_by_label("Target chapter");
+    if let Ok(dir) = std::env::var("PDFCRAFT_BOOKMARK_SHOTS") {
+        h.render().unwrap().save(format!("{dir}/control-cleared-bookmarks.png")).unwrap();
+    }
 }
 
 #[test]
@@ -102,7 +132,7 @@ fn language_switch_preserves_document_and_command_ids() {
     let documents = ok(&mut h, &c, "ui.state", json!({}))["documents"].clone();
     assert_eq!(documents[0]["dirty"], true);
     let commands = ok(&mut h, &c, "ui.commands", json!({}));
-    for code in ["ja", "zh-hans", "en"] {
+    for code in ["ja", "zh-hans", "fr", "de", "en"] {
         ok(&mut h, &c, "ui.set", json!({ "key": "language", "value": code }));
         h.run_steps(2);
         let state = ok(&mut h, &c, "ui.state", json!({}));
@@ -547,6 +577,33 @@ fn japanese_dialogs_errors_and_custom_action_names() {
 }
 
 #[test]
+fn simplified_chinese_about_tabs_and_credit_controls() {
+    let (mut h, c) = harness();
+    let documents = ok(&mut h, &c, "ui.state", json!({}))["documents"].clone();
+    ok(&mut h, &c, "ui.set", json!({"key": "language", "value": "zh-hans"}));
+    ok(&mut h, &c, "ui.set", json!({"key": "dialog", "value": "about"}));
+    for label in ["关于", "贡献者", "模型"] {
+        let found = ok(&mut h, &c, "ui.inspect", json!({"query": label}));
+        assert!(found["widgets"].as_array().unwrap().iter().any(|w| w["label"] == label), "{found}");
+    }
+    ok(&mut h, &c, "ui.click", json!({"label": "贡献者"}));
+    for label in ["用户名", "显示名称", "真实姓名", "排序", "名称列表", "表格", "首次提交"] {
+        let found = ok(&mut h, &c, "ui.inspect", json!({"query": label}));
+        assert!(found["count"].as_u64().unwrap() > 0, "{label}: {found}");
+    }
+    ok(&mut h, &c, "ui.click", json!({"label": "表格"}));
+    for label in ["新增行", "删除行", "净增行", "新增资源", "删除资源"] {
+        let found = ok(&mut h, &c, "ui.inspect", json!({"query": label}));
+        assert!(found["count"].as_u64().unwrap() > 0, "{label}: {found}");
+    }
+    ok(&mut h, &c, "ui.click", json!({"label": "模型"}));
+    let columns = ok(&mut h, &c, "ui.inspect", json!({"query": "占全部提交的比例"}));
+    let empty = ok(&mut h, &c, "ui.inspect", json!({"query": "此版本未包含模型贡献记录。"}));
+    assert!(columns["count"].as_u64().unwrap() > 0 || empty["count"].as_u64().unwrap() > 0, "{columns}, {empty}");
+    assert_eq!(ok(&mut h, &c, "ui.state", json!({}))["documents"], documents);
+}
+
+#[test]
 fn simplified_chinese_signature_prompts_and_errors_keep_document_state() {
     let (mut h, c) = harness();
     let documents = ok(&mut h, &c, "ui.state", json!({}))["documents"].clone();
@@ -650,6 +707,14 @@ fn select_all_key_selects_every_page_in_organize() {
     assert_eq!(h.state().views[0].target_pages(), [0, 1, 2, 3, 4]);
     assert_eq!(h.state().views[0].current, 2);
     assert_eq!(ok(&mut h, &c, "ui.state", json!({}))["documents"][0]["dirty"], false);
+}
+
+#[test]
+fn state_reports_the_selected_pages() {
+    let (mut h, c) = harness();
+    assert_eq!(ok(&mut h, &c, "ui.state", json!({}))["active"]["selected_pages"], json!([]));
+    ok(&mut h, &c, "ui.set", json!({ "key": "select", "value": "2,4" }));
+    assert_eq!(ok(&mut h, &c, "ui.state", json!({}))["active"]["selected_pages"], json!([2, 4]));
 }
 
 #[test]

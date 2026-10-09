@@ -45,6 +45,27 @@ fn line_end(c: &mut String, kind: &[u8], tip: (f64, f64), from: (f64, f64), w: f
     c.push_str(&format!("{} {} m {} {} l {} {} l {op}\n", n(a.0), n(a.1), n(tip.0), n(tip.1), n(b.0), n(b.1)));
 }
 
+/// The cubic Bézier segments (first control point, second control point, end) of a smooth curve
+/// through every point of `pts`, from the first: a Catmull-Rom spline, so the curve leaves each
+/// point parallel to the chord between its neighbours (an end uses itself as the missing
+/// neighbour). Ink is drawn so, as Acrobat draws it, rather than as straight segments. The curve
+/// stays within its points and these control points.
+pub(crate) fn smooth_segments(pts: &[(f64, f64)]) -> Vec<[(f64, f64); 3]> {
+    let Some(&last) = pts.last() else { return Vec::new() };
+    let at = |i: usize| pts.get(i).copied().unwrap_or(last);
+    (0..pts.len().saturating_sub(1))
+        .map(|i| {
+            let (p0, p1, p2, p3) = (at(i.saturating_sub(1)), at(i), at(i + 1), at(i + 2));
+            [(p1.0 + (p2.0 - p0.0) / 6.0, p1.1 + (p2.1 - p0.1) / 6.0), (p2.0 - (p3.0 - p1.0) / 6.0, p2.1 - (p3.1 - p1.1) / 6.0), p2]
+        })
+        .collect()
+}
+
+/// `c` operators for [`smooth_segments`] (the path already starts at the first point).
+fn smooth_curve(pts: &[(f64, f64)]) -> String {
+    smooth_segments(pts).iter().map(|[a, b, e]| format!("{} {} {} {} {} {} c\n", n(a.0), n(a.1), n(b.0), n(b.1), n(e.0), n(e.1))).collect()
+}
+
 /// A closed cloudy outline through `pts` (§12.5.4 `/BE /S /C`): each edge becomes a row of
 /// half-circle bumps of about `r`, bulging outwards.
 pub fn cloud_path(pts: &[(f64, f64)], r: f64) -> String {
@@ -177,6 +198,12 @@ fn form(bbox: [f64; 4], content: &[u8], resources: Dict) -> Stream {
     d.set(b"BBox".to_vec(), Object::Array(bbox.iter().map(|x| Object::Real(*x)).collect()));
     d.set(b"Resources".to_vec(), Object::Dict(resources));
     Stream::flate(d, content)
+}
+
+/// The page `/Rotate` an image signature's picture is turned back by (`/PCPictureRotate`, written
+/// when the signature is added to a turned page): 0, 90, 180 or 270.
+pub(crate) fn picture_turn(d: &Dict) -> i64 {
+    d.get(b"PCPictureRotate").and_then(Object::as_int).unwrap_or(0).rem_euclid(360) / 90 * 90
 }
 
 /// Draw the normal appearance of an annotation, or `None` if this subtype/variant isn't supported.
@@ -396,11 +423,10 @@ pub fn build(d: &Dict) -> Option<Stream> {
                 let pts: Vec<(f64, f64)> = pts.as_chunks::<2>().0.iter().map(|p| (p[0], p[1])).collect();
                 let Some(first) = pts.first() else { continue };
                 c.push_str(&format!("{} {} m\n", n(first.0), n(first.1)));
-                if pts.len() == 1 {
-                    c.push_str(&format!("{} {} l\n", n(first.0 + 0.01), n(first.1)));
-                }
-                for p in &pts[1..] {
-                    c.push_str(&format!("{} {} l\n", n(p.0), n(p.1)));
+                match pts.as_slice() {
+                    [_] => c.push_str(&format!("{} {} l\n", n(first.0 + 0.01), n(first.1))),
+                    [_, end] => c.push_str(&format!("{} {} l\n", n(end.0), n(end.1))),
+                    _ => c.push_str(&smooth_curve(&pts)),
                 }
                 c.push_str("S\n");
             }
@@ -424,11 +450,14 @@ pub fn build(d: &Dict) -> Option<Stream> {
                 return Some(form(rect, c.as_bytes(), res));
             }
             // A custom stamp: its picture (an image, or a form mapped to /PCPictureSize) fills
-            // the rectangle.
+            // the rectangle. An image signature added to a turned page (`/PCPictureRotate`) gets
+            // the standard counter-rotation as its form `/Matrix`: viewers fit the turned
+            // bounding box to `/Rect` (ISO 32000-2 §12.5.5), so it reads upright as displayed.
             if let Some(pic) = d.get(b"PCPicture").and_then(Object::as_ref) {
                 let [x0, y0, x1, y1] = rect;
                 let (w, h) = (x1 - x0, y1 - y0);
-                let place = if matches!(d.get(b"PCPictureImage"), Some(Object::Bool(true))) {
+                let image = matches!(d.get(b"PCPictureImage"), Some(Object::Bool(true)));
+                let place = if image {
                     format!("{} 0 0 {} {} {} cm", n(w), n(h), n(x0), n(y0))
                 } else {
                     let size = nums(d, b"PCPictureSize").filter(|s| s.len() == 2 && s[0] > 0.0 && s[1] > 0.0)?;
@@ -438,7 +467,15 @@ pub fn build(d: &Dict) -> Option<Stream> {
                 let mut xo = Dict::new();
                 xo.set(b"Pic".to_vec(), Object::Ref(pic));
                 res.set(b"XObject".to_vec(), Object::Dict(xo));
-                return Some(form(rect, c.as_bytes(), res));
+                let mut stream = form(rect, c.as_bytes(), res);
+                let turn = picture_turn(d);
+                if image && turn != 0 {
+                    // The page's view matrix without its offset: display axes in user space.
+                    let m = pdfcraft_model::view_matrix_for(turn, [0.0; 4]);
+                    let matrix = [m[0], m[1], m[2], m[3], 0.0, 0.0];
+                    stream.dict.set(b"Matrix".to_vec(), Object::Array(matrix.iter().map(|x| Object::Real(*x)).collect()));
+                }
+                return Some(stream);
             }
             // Only PdfCraft's own Fill & Sign marks are drawn here.
             let name = d.name(b"Name")?;

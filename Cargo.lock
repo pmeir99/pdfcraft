@@ -3477,6 +3477,7 @@ dependencies = [
  "hayro-syntax",
  "pdfcraft-cos",
  "pdfcraft-fonts",
+ "pdfcraft-model",
  "thiserror 2.0.21",
 ]
 
@@ -3488,6 +3489,7 @@ dependencies = [
  "image",
  "pdfcraft-engine",
  "pdfcraft-organize",
+ "pdfcraft-platform",
  "pdfcraft-render",
  "pdfcraft-xfa",
  "png 0.18.1",
@@ -3566,6 +3568,7 @@ dependencies = [
  "pdfcraft-fonts",
  "pdfcraft-model",
  "thiserror 2.0.21",
+ "unicode-bidi",
 ]
 
 [[package]]
@@ -3573,6 +3576,8 @@ name = "pdfcraft-engine"
 version = "0.4.0"
 dependencies = [
  "chrono",
+ "icu_properties",
+ "idna",
  "image",
  "pdfcraft-a11y",
  "pdfcraft-annot",
@@ -3598,6 +3603,7 @@ dependencies = [
  "pdfcraft-xfdf",
  "png 0.18.1",
  "thiserror 2.0.21",
+ "url",
 ]
 
 [[package]]
@@ -3621,6 +3627,7 @@ dependencies = [
 name = "pdfcraft-fonts"
 version = "0.4.0"
 dependencies = [
+ "harfrust",
  "pdfcraft-cos",
  "skrifa 0.44.0",
 ]
@@ -3701,6 +3708,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "pdfcraft-platform"
+version = "0.4.0"
+
+[[package]]
 name = "pdfcraft-preflight"
 version = "0.4.0"
 dependencies = [
@@ -3736,12 +3747,15 @@ dependencies = [
 name = "pdfcraft-render"
 version = "0.4.0"
 dependencies = [
+ "bytemuck",
  "getrandom 0.4.3",
  "hayro",
  "hayro-syntax",
  "kurbo 0.13.1",
  "log",
  "lopdf",
+ "pdfcraft-fonts",
+ "skrifa 0.44.0",
  "thiserror 2.0.21",
 ]
 
@@ -3751,6 +3765,7 @@ version = "0.4.0"
 dependencies = [
  "aes",
  "aws-lc-rs",
+ "base64 0.22.1",
  "cbc",
  "des",
  "getrandom 0.4.3",
@@ -3763,6 +3778,7 @@ dependencies = [
  "pdfcraft-fonts",
  "rc2",
  "rsa",
+ "rustls-cng",
  "security-framework",
  "sha1",
  "sha2",
@@ -3783,10 +3799,14 @@ dependencies = [
  "image",
  "js-sys",
  "log",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
  "pdfcraft-cos",
  "pdfcraft-engine",
  "pdfcraft-fonts",
  "pdfcraft-model",
+ "pdfcraft-platform",
  "pdfcraft-render",
  "pdfcraft-xfa",
  "png 0.18.1",
@@ -3797,6 +3817,7 @@ dependencies = [
  "skrifa 0.44.0",
  "sys-locale",
  "toml",
+ "unicode-bidi",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -4734,6 +4755,17 @@ dependencies = [
  "rustls-webpki",
  "subtle",
  "zeroize",
+]
+
+[[package]]
+name = "rustls-cng"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3eeed9c3e96253f36d1cfdd593388ecca775b532b6ff0c649a3010f6af60fe70"
+dependencies = [
+ "bitflags 2.13.2",
+ "rustls",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
