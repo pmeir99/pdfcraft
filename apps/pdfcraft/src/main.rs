@@ -149,7 +149,12 @@ fn main() -> eframe::Result {
             _ => files.push(path_from_arg(a)),
         }
     }
-    let integrated = cfg!(target_os = "macos");
+    // Use the standard macOS title bar by default. PdfCraft's document tabs remain
+    // inside the egui window below the native traffic-light controls and title.
+    // The previous full-size integrated tab strip remains available as an opt-in
+    // while we incrementally add native macOS menus and other window conventions.
+    let integrated = cfg!(target_os = "macos")
+        && std::env::var_os("PDFCRAFT_INTEGRATED_TITLEBAR").is_some();
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("PdfCraft")
         .with_inner_size([1440.0, 920.0])
