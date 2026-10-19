@@ -1,16 +1,12 @@
 name: Build PDFCraftBeta for macOS
 
 on:
-  # One macOS integration build. Later source-only pushes do not flood the runner queue.
-  push:
-    branches: [sync/upstream-20261019-hebrew-beta]
-    paths: [.github/workflows/build-macos-beta.yml]
   workflow_dispatch:
     inputs:
       source_ref:
         description: Branch to compile (Hebrew fixes by default)
         required: true
-        default: sync/upstream-20261019-hebrew-beta
+        default: main
         type: string
 
 permissions:
