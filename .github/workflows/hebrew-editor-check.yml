@@ -2,7 +2,7 @@ name: Hebrew editor code checks
 
 on:
   push:
-    branches: [fix/hebrew-editor-fonts-20261015]
+    branches: [sync/upstream-20261019-hebrew-beta]
   workflow_dispatch:
 
 permissions:
@@ -83,7 +83,7 @@ jobs:
             libgl1-mesa-dev libgtk-3-dev
 
       - name: Check GUI and PDF text-writing crates
-        run: cargo check --locked -p pdfcraft-ui-egui -p pdfcraft-edit
+        run: cargo check --locked -p pdfcraft -p pdfcraft-ui-egui -p pdfcraft-edit -p pdfcraft-fonts
 
       - name: RTL caret and niqqud regression tests
         run: |
