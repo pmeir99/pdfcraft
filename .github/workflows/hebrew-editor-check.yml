@@ -2,7 +2,7 @@ name: Hebrew editor code checks
 
 on:
   push:
-    branches: [sync/upstream-20261019-hebrew-beta]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
