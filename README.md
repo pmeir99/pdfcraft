@@ -1,3 +1,27 @@
+## PDFCraftBeta macOS fork
+
+This fork focuses on the native **macOS Apple Silicon desktop GUI**, preserving
+Hebrew and mixed RTL/LTR PDF text editing improvements. The default Cargo
+workspace member is `apps/pdfcraft`; a standard build does not compile a
+separate CLI, web application, Windows package, or Linux desktop package.
+
+Use [Build PDFCraftBeta for macOS](.github/workflows/build-macos-beta.yml) for
+the standalone `PDFCraftBeta.app` ZIP. The beta uses its own macOS app identity,
+settings, and crash-recovery folder, separate from a stable PdfCraft install.
+
+Shared Rust libraries and conditional platform code are retained because the
+macOS editor depends on them; excluding non-macOS distribution targets does
+not mean stripping platform guards or shared parsers from the source tree.
+The focused [Hebrew editor checks](.github/workflows/hebrew-editor-check.yml)
+may run on Linux as **internal validation only**; that workflow does not build
+or publish Linux applications.
+
+PDF glyph extraction is not always unambiguous, and editor/appearance parity
+requires testing on real PDFs. This is a beta build, not an Adobe Acrobat
+compatibility certification.
+
+---
+
 <p align="center">
   <a href="https://getartcraft.com/">
     <picture>
