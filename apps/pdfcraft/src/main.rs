@@ -401,7 +401,7 @@ fn app_creator<'a>(
             app.os_events = Some(apple_events.connect(&cc.egui_ctx));
             // winit's Quit (⌘Q) ends the process without asking about unsaved changes (#1136). This
             // menu's Quit closes the window instead, so `guard_quit` asks, as for the close button.
-            if let Err(e) = craft_quit::install_app_menu(&cc.egui_ctx, "PdfCraft") {
+            if let Err(e) = craft_quit::install_app_menu(&cc.egui_ctx, APP_TITLE) {
                 log::warn!("couldn't install the app menu, so ⌘Q quits without asking to save: {e}");
             }
         }
@@ -413,7 +413,14 @@ fn app_creator<'a>(
             open_control_channel(file, pdfcraft_ui_egui::control::serve(client))?;
         }
         // Autosave unsaved changes; offer to recover documents a crashed session left behind.
-        if let Some(dir) = pdfcraft_ui_egui::RecoveryStore::default_dir() {
+        // Beta must not claim/open the stable app's crash-recovery documents.
+        // Use the same beta-specific data root as its independent settings.
+        let recovery_dir = if BETA_BUILD {
+            settings_dir().map(|p| p.join("Recovery"))
+        } else {
+            pdfcraft_ui_egui::RecoveryStore::default_dir()
+        };
+        if let Some(dir) = recovery_dir {
             app.enable_recovery(pdfcraft_ui_egui::RecoveryStore::new(dir));
         }
         if let Some(state) = &cc.wgpu_render_state {
