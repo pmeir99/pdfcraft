@@ -2,7 +2,8 @@
 resolver = "3"
 members = ["crates/*", "apps/*", "xtask"]
 exclude = ["vendor"]
-default-members = ["crates/*", "apps/pdfcraft", "xtask"]
+# Ship/build only the native desktop UI by default. Other crates remain as dependencies.
+default-members = ["apps/pdfcraft"]
 
 [workspace.package]
 version = "0.9.0"
